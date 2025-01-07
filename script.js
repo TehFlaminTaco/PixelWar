@@ -430,21 +430,64 @@ function explode(x, y, BOOM_POWER){
     }
 }
 
+function makesandy(x,y){
+    while(x < 0) x += WIDTH;
+    while(y < 0) y += HEIGHT;
+    while(x >= WIDTH) x -= WIDTH;
+    while(y >= HEIGHT) y -= HEIGHT;
+    expectedHeightMap[y>>>0][x>>>0] = 0.0;
+}
+
+function fill(x, y, BOOM_POWER){
+    const BOOM_VERTICAL_POWER = BOOM_POWER * (0.1/24);
+    const targetZ = tryget(x,y);
+    for(let dx = BOOM_POWER; dx >= -BOOM_POWER; dx--){
+        const dx2 = dx * dx;
+        for (let dy = -BOOM_POWER; dy <= BOOM_POWER; dy++){
+            const dy2 = dy * dy;
+            if (dx2 + dy2 <= BOOM_POWER ** 2){
+                let dist = (dx2 + dy2);
+                const dz = (Math.sqrt((BOOM_POWER*BOOM_POWER) - dist) / BOOM_POWER) * BOOM_VERTICAL_POWER;
+                const f = tryget(x+dx,y+dy);
+                let n = Math.min(1.0 - (cyrb64(`${x+dx},${y+dy}`)[0]/2**32) * 0.01, Math.max(f, targetZ+dz + (cyrb64(`${x},${y},${dx},${dy},${+new Date()}`)[0]/2**32) * 0.01));
+                if(n > f){
+                    makesandy(x+dx,y+dy);
+                    tryset(x+dx,y+dy,n);
+                    updatePixel(x+dx,y+dy);
+                }
+            }
+        }
+    }
+}
+
+canvas.addEventListener("contextmenu", (evnt)=>{
+    const rect = evnt.target.getBoundingClientRect();
+    let x = evnt.clientX - rect.left;
+    let y = evnt.clientY - rect.top;
+    x *= WIDTH / rect.width;
+    y *= HEIGHT / rect.height;
+    fill(x, y, 24);
+    evnt.preventDefault();
+    return false;
+})
+
 canvas.addEventListener("mousedown", (evnt) => {
     const rect = evnt.target.getBoundingClientRect();
     let x = evnt.clientX - rect.left;
     let y = evnt.clientY - rect.top;
     x *= WIDTH / rect.width;
     y *= HEIGHT / rect.height;
-    if(!HQs[0]){
-        dudes.filter(c=>c.team === 0).forEach(c=>{c.x = x >>> 0; c.y = y >>> 0; c.target = []})
-        return;
+    if(evnt.button === 0){
+        if(!HQs[0]){
+            dudes.filter(c=>c.team === 0).forEach(c=>{c.x = x >>> 0; c.y = y >>> 0; c.target = []})
+            return;
+        }
+        if(!HQs[1]){
+            dudes.filter(c=>c.team === 1).forEach(c=>{c.x = x >>> 0; c.y = y >>> 0; c.target = []})
+            return;
+        }
+        explode(x, y, 24);
     }
-    if(!HQs[1]){
-        dudes.filter(c=>c.team === 1).forEach(c=>{c.x = x >>> 0; c.y = y >>> 0; c.target = []})
-        return;
-    }
-    explode(x, y, 24);
 })
 
 function RAIN(){
