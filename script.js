@@ -432,8 +432,10 @@ function explode(x, y, BOOM_POWER){
 
 canvas.addEventListener("mousedown", (evnt) => {
     const rect = evnt.target.getBoundingClientRect();
-    const x = evnt.clientX - rect.left;
-    const y = evnt.clientY - rect.top;
+    let x = evnt.clientX - rect.left;
+    let y = evnt.clientY - rect.top;
+    x *= WIDTH / rect.width;
+    y *= HEIGHT / rect.height;
     if(!HQs[0]){
         dudes.filter(c=>c.team === 0).forEach(c=>{c.x = x >>> 0; c.y = y >>> 0; c.target = []})
         return;
