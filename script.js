@@ -4,9 +4,21 @@ const context = canvas.getContext("2d");
 const pop = document.querySelector("img");
 const POP_FRAMES = 13;
 
+const MAX_DUDES_PER_TEAM = 50;
+const DUDE_DANGER = 40;
+
 //window.WIDTH = 64;//document.body.clientWidth;
 //window.HEIGHT = document.body.clientHeight;
 
+
+FREEZE_PROFILES = {};
+function freeze_check(name){
+    if(!FREEZE_PROFILES[name])FREEZE_PROFILES[name] = 0;
+    else if (FREEZE_PROFILES[name]++ > 1000){
+        console.log("FREEZE", name);
+        debugger;
+    }
+}
 
 window.WATER_HEIGHT = 0.5;
 window.drainTo = WATER_HEIGHT;
@@ -107,19 +119,27 @@ class Dude {
                     // Nagivate to a random other dude of our team.
                     let otherDudes = dudes.filter(c=>c.team === this.team);
                     let otherDude = otherDudes[(Math.random() * otherDudes.length)>>>0];
+                    let tries = 0;
                     do {
+                        if(tries++ >= 10)break;
                         tx = otherDude.x;
                         ty = otherDude.y;
                         tx += (Math.random()*10-5);
                         ty += (Math.random()*10-5);
                     } while (tryget(tx>>>0,ty>>>0) < WATER_HEIGHT);
-                    this.target = path(this.x >>> 0, this.y >>> 0, tx >>> 0, ty >>> 0).slice(0,64);
-                    if(this.target.length === 0 && otherDude !== this){
+                    if(tries >= 10){
                         if(this.failCount++ > 10){
                             this.alive = false;
+                        } 
+                    }else{
+                        this.target = path(this.x >>> 0, this.y >>> 0, tx >>> 0, ty >>> 0).slice(0,64);
+                        if(this.target.length === 0 && otherDude !== this){
+                            if(this.failCount++ > 10){
+                                this.alive = false;
+                            }
                         }
                     }
-                }else if(!HQs[1 - this.team] || dudes.filter(c=>c.team === this.team).length < 15 || HQs[1 - this.team].battleCooldown > 0 || HQs[this.team].battleCooldown > 0){
+                }else if(!HQs[1 - this.team] || dudes.filter(c=>c.team === this.team).length < DUDE_DANGER || HQs[1 - this.team].battleCooldown > 0 || HQs[this.team].battleCooldown > 0){
                     let hq = HQs[this.team];
                     tx = hq.x + Math.random() * 128 - 64;
                     ty = hq.y + Math.random() * 128 - 64;
@@ -168,6 +188,22 @@ class Dude {
                 this.walkWait = Math.min(SCORE(this.x>>>0,this.y>>>0,p[0]>>>0,p[1]>>>0) >>> 0, MAX_WALK);
                 this.x = p[0];
                 this.y = p[1];
+            }
+        }else{
+            if(this.walkWait > 0)
+                this.walkWait--;
+            else{
+                const opts = [
+                    [-1, -1], [0, -1], [1, -1],
+                    [-1,  0],          [1,  0],
+                    [-1,  1], [0,  1], [1,  1]
+                ].filter(c=>tryget(this.x + c[0], this.y + c[1]) >= WATER_HEIGHT);
+                if(opts.length > 0){
+                    let p = opts[(Math.random()*opts.length)>>>0];
+                    this.walkWait = Math.min(SCORE(this.x>>>0,this.y>>>0,(this.x+p[0])>>>0,(this.y+p[1])>>>0) >>> 0, MAX_WALK);
+                    this.x += p[0];
+                    this.y += p[1];
+                }
             }
         }
         context.strokeStyle = this.team === 0 ? "rgba(0,0,255,0.5)" : "rgba(255,0,0,0.5)";
@@ -245,11 +281,12 @@ class Bullet {
 }
 let bullets = [];
 
-let dudes = new Array(50).fill(null).map(c=>new Dude(Math.random() * WIDTH, Math.random() * HEIGHT, Math.random() > 0.5 ? 0 : 1))
+let dudes = new Array(MAX_DUDES_PER_TEAM).fill(null).map(c=>new Dude(Math.random() * WIDTH, Math.random() * HEIGHT, Math.random() > 0.5 ? 0 : 1))
 
 const imgData = context.getImageData(0, 0, WIDTH, HEIGHT);
 let dirty = true;
 function draw(){
+    FREEZE_PROFILES = {};
     context.putImageData(imgData, 0, 0)
     for(let d of dudes){
         if(tryget(d.x>>>0,d.y>>>0)<WATER_HEIGHT)
@@ -259,6 +296,12 @@ function draw(){
     dudes = dudes.filter(c=>c.alive);
     for(let t of [0, 1]){
         let teamDudes = dudes.filter(c=>c.team === t);
+        if(HQs[t] && !HQs[t].alive){
+            let hq = HQs[t];
+            HQs[t] = null;
+            explode(hq.x, hq.y, 24);
+            continue;
+        }
         if(!HQs[t]){
             // If all the dudes of this team are within 64u of their average
             let ax = 0;
@@ -292,13 +335,14 @@ function draw(){
                     x: hx >>> 0,
                     y: hy >>> 0,
                     cooldown: 25,
-                    battleCooldown: 250
+                    battleCooldown: 250,
+                    alive: true
                 }
             }
         }else{
             let hq = HQs[t];
             if(HQs[1-t] && hq.battleCooldown > 0)hq.battleCooldown--;
-            if(teamDudes.length < 25 && hq.cooldown <= 0){
+            if(teamDudes.length < MAX_DUDES_PER_TEAM && hq.cooldown <= 0){
                 dudes.push(new Dude(hq.x, hq.y, t));
                 hq.cooldown = 25 + (Math.random() * 50)>>>0;
             }
@@ -400,6 +444,7 @@ function updatePixel(x,y){
 }
 
 function explode(x, y, BOOM_POWER){
+    freeze_check("explode");
     explosions.push(new Explosion(x,y,BOOM_POWER))
     const BOOM_VERTICAL_POWER = BOOM_POWER * (0.1/24);
     const targetZ = tryget(x,y);
@@ -410,8 +455,11 @@ function explode(x, y, BOOM_POWER){
         }
     })
     for(let t in HQs){
-        if((HQs[t].x - x) ** 2 + (HQs[t].y - y) ** 2 < BOOM_POWER ** 2){
-            HQs[t] = false;
+        let hq = HQs[t];
+        if(hq){
+            if((hq.x - x) ** 2 + (hq.y - y) ** 2 < BOOM_POWER ** 2){
+                hq.alive = false;
+            }
         }
     }
     for(let dx = BOOM_POWER; dx >= -BOOM_POWER; dx--){
