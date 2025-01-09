@@ -1,7 +1,7 @@
 const SEED = `${+new Date()}`
 
 window.WIDTH = 960;
-window.HEIGHT = 459;
+window.HEIGHT = WIDTH / (document.body.clientWidth / document.body.clientHeight);//540;
 
 window.lerp = function(a, b, t){
     return a+t*(b-a)
@@ -22,6 +22,14 @@ function bicubicInterpolate(xfrac, yfrac, sample) {
 
     return cubicInterpolate(arr, xfrac);
 }
+function bilinearInterpolate(xfrac, yfrac, sample){
+    return lerp(
+        lerp(sample(0,0), sample(1,0), xfrac),
+        lerp(sample(0,1), sample(1,1), xfrac),
+        yfrac
+    )
+}
+
 
 const cyrb64 = (str, seed = 0) => {
     let h1 = 0xdeadbeef ^ seed, h2 = 0x41c6ce57 ^ seed;
@@ -42,17 +50,22 @@ const cyrb64 = (str, seed = 0) => {
 
 let biggest = 0;
 let smallest = 100;
+let cache = {};
 function sample(x, y, octave, seed){
     seed ||= SEED
     const xfrac = x%1;
     const yfrac = y%1;
-    const xfloor = Math.floor(x)>>>0;
-    const yfloor = Math.floor(y)>>>0;
+    const xfloor = x>>>0;
+    const yfloor = y>>>0;
     if(xfrac !== 0 || yfrac !== 0){
         return bicubicInterpolate(xfrac, yfrac, (_x,_y)=>sample(_x+xfloor, _y+yfloor, octave, seed))
     }
-    let v= (cyrb64(`${xfloor},${yfloor},${octave},${seed}`)[0] / 2**32);
-    return v / octave;
+    let key = `${x},${y},${octave},${seed}`;
+    if (key in cache){
+        return cache[key];
+    }
+    let v= (cyrb64(key)[0] / 2**32);
+    return cache[key] = (v / octave);
 }
 
 function tryget(x,y){
@@ -71,9 +84,11 @@ function tryset(x,y,v){
     heightMap[y>>>0][x>>>0] = v;
 }
 
-function octavesample(x, y, octave, seed){
+function octavesample(x, y, octave, seed, minoctave = 2){
+    x /= (minoctave / 2);
+    y /= (minoctave / 2);
     let s = sample(x, y, octave, seed);
-    while(octave > 2){
+    while(octave > minoctave){
         octave /= 2;
         x /= 2;
         y /= 2;
@@ -82,15 +97,20 @@ function octavesample(x, y, octave, seed){
     return s
 }
 
-let big = 0;
-let small = 1;
-const scalar = (1/2 + 1/4 + 1/8 + 1/16 + 1/32 + 1/64 + 1/128)
+let MAX_OCTAVES = 128;
+let MIN_OCTAVE = 2;
+let scalar = 0;
+for(let i=MIN_OCTAVE; i<=MAX_OCTAVES; i*=2){
+    scalar += 1/i
+}
 let start = +new Date();
 window.heightMap = [];
+seed(+new Date());
 for(let y=0; y < window.HEIGHT; y++){
     window.heightMap[y] = [];
     for(let x=0; x < window.WIDTH; x++){
-        window.heightMap[y][x] = octavesample(x,y,128) / scalar
+        //window.heightMap[y][x] = octavesample(x,y,MAX_OCTAVES, null, MIN_OCTAVE) / scalar*/
+        window.heightMap[y][x] = ((fbm(x / 480,y / 480,10,1,2,0.5,2.0) + 1.0) * 0.5) * 0.7+ 0.1;/*octavesample(x,y,MAX_OCTAVES, null, MIN_OCTAVE) / scalar*/
     }
 }
 console.log(`Took: ${(+new Date()) - start}ms to generate!`)
